@@ -11,6 +11,7 @@
 | `AGENTS.md` | Agent role, permissions, doc pointer index. |
 | `README.md` | Quick start, tool reference, architecture summary. |
 | `ARCHITECTURE.md` | Codebase tour — components, data flow, what not to change. |
+| `justfile` | Unified task runner (`just --list` to discover commands). |
 | `pyproject.toml` | Python package config. Package name: `semantic_search_mcp`. |
 | `.env.example` | Environment variable template. |
 | `.gitignore` | Standard patterns + data/ directory. |
@@ -51,7 +52,7 @@ New modules go here. Never add business logic to `server.py`.
 | `docs/README.md` | Navigation index. |
 | `docs/vision.md` | Product vision. Update at most yearly. |
 | `docs/roadmap.md` | Versioned feature plan. |
-| `docs/decisions/NNNN-*.md` | ADRs — why we made each design choice. Immutable once accepted. |
+| `docs/decisions/NNNN-*.md` | ADRs — immutable once accepted. |
 | `docs/playbooks/*.md` | Step-by-step operational guides. |
 
 **NEVER create** `docs/architecture.md`, `docs/deployment.md`, `docs/notes.md` or any other ad-hoc files.
@@ -60,16 +61,9 @@ Architecture → `ARCHITECTURE.md` (root). Specs → `specs/`. Everything else �
 ## Specs (`specs/`)
 
 Numbered implementation specs. Primary deliverable for this repo.
+Flat structure only — no subdirectories.
 
-| Pattern | Rule |
-|---------|------|
-| `specs/NNN-feature-name.md` | Zero-padded 3 digits, sequential, never reused |
-| `specs/README.md` | Status table for all specs |
-| `specs/000-template.md` | Template all specs follow |
-
-**Flat structure only** — no subdirectories.
-
-## What Goes Where (Quick Reference)
+## What Goes Where
 
 | Content | Location |
 |---------|----------|
@@ -79,4 +73,3 @@ Numbered implementation specs. Primary deliverable for this repo.
 | Session notes | `devlog/YYYY-MM-DD.md` |
 | Agent priorities | `.self-improvement/NEXT.md` |
 | Worker reports | `.self-improvement/reports/<worker>/YYYY-MM-DD.md` |
-| Temp task files | `tasks/` (delete when done) |
