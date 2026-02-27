@@ -28,3 +28,8 @@ workers:
     agent: .claude/agents/model-quality-auditor.md
     schedule: "0 10 * * 5"  # Friday 10am
     description: Benchmark embedding model performance
+
+  static-analysis-expert:
+    agent: .claude/agents/static-analysis-expert.md
+    schedule: "0 10 1 * *"  # 1st of month 10am
+    description: Research static analysis techniques, code quality metrics, MCP patterns

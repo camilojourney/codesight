@@ -23,3 +23,7 @@ Semantic code search MCP server — hybrid BM25 + vector + RRF retrieval for Cla
 - Rules: @.claude/rules/
 - Decisions: @docs/decisions/
 - Env template: @.env.example
+
+## Rule Imports
+
+@import .claude/rules/delegation.md
