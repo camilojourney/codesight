@@ -161,7 +161,10 @@ def get_embedder(
         expected_dim: Expected embedding dimension.
         backend: 'local' for sentence-transformers, 'api' for OpenAI.
     """
-    dim = resolve_embedding_dim(model_name) if expected_dim == DEFAULT_EMBEDDING_DIM else expected_dim
+    if expected_dim != DEFAULT_EMBEDDING_DIM:
+        dim = expected_dim
+    else:
+        dim = resolve_embedding_dim(model_name)
 
     if backend == "api":
         logger.info("Using API embedding backend: %s", model_name)

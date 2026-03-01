@@ -1,6 +1,6 @@
 # Spec 002: Embedding Model Configuration
 
-**Status:** planned
+**Status:** implemented
 **Phase:** v0.3
 **Author:** Juan Martinez
 **Created:** 2026-02-24

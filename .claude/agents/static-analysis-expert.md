@@ -20,7 +20,7 @@ At startup:
 1. Read `.self-improvement/knowledge/requests/` — check for pending knowledge gaps filed by other agents. Process these FIRST.
 2. Read `.self-improvement/knowledge/current/static-analysis-techniques.md` -- understand current state
 3. Check `archive/` for the last version -- understand what changed since last cycle
-4. Research: AST analysis advances, semantic code search techniques, code complexity metrics, developer tool UX research, MCP server patterns
+4. Research: AST analysis advances, semantic code search techniques, code complexity metrics, developer tool UX research, document search patterns
 5. Update `.self-improvement/knowledge/current/static-analysis-techniques.md` using the standard schema
 
 Knowledge File Schema (always follow this):

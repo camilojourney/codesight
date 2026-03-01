@@ -1,6 +1,6 @@
 # Spec 006: Pluggable LLM Backend
 
-**Status:** planned
+**Status:** implemented
 **Phase:** v0.3
 **Author:** Juan Martinez
 **Created:** 2026-02-28

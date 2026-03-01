@@ -71,6 +71,13 @@ STALE_THRESHOLD_SECONDS = 300  # 5 minutes
 BM25_CANDIDATE_MULTIPLIER = 3  # fetch 3x top_k from each retriever before RRF
 
 DEFAULT_LLM_MODEL = "claude-sonnet-4-20250514"
+
+# Reranker
+DEFAULT_RERANKER_ENABLED = os.environ.get("CODESIGHT_RERANKER", "false").lower() == "true"
+DEFAULT_RERANKER_MODEL = os.environ.get(
+    "CODESIGHT_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+)
+DEFAULT_RERANKER_TOP_N = int(os.environ.get("CODESIGHT_RERANKER_TOP_N", "20"))
 DEFAULT_LLM_BACKEND = os.environ.get("CODESIGHT_LLM_BACKEND", "claude")
 
 
@@ -138,3 +145,6 @@ class ServerConfig(BaseModel):
     stale_threshold_seconds: int = Field(default=STALE_THRESHOLD_SECONDS)
     llm_backend: str = Field(default=DEFAULT_LLM_BACKEND)
     llm_model: str = Field(default=DEFAULT_LLM_MODEL)
+    reranker: bool = Field(default=DEFAULT_RERANKER_ENABLED)
+    reranker_model: str = Field(default=DEFAULT_RERANKER_MODEL)
+    reranker_top_n: int = Field(default=DEFAULT_RERANKER_TOP_N)

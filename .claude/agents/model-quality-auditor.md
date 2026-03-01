@@ -25,7 +25,7 @@ Read `.self-improvement/MEMORY.md` for project state, then read the latest repor
 ## Audit Protocol
 
 ```
-1. Read current model config from src/semantic_search_mcp/config.py
+1. Read current model config from src/codesight/config.py
 2. Run standard test query set (10+ queries across code search types)
 3. Record Precision@10, top-1 hit rate, latency per model (where available)
 4. Compare against baseline in trajectory.jsonl

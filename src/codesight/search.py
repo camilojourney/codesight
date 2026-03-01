@@ -1,14 +1,16 @@
-"""Hybrid search: BM25 + vector + Reciprocal Rank Fusion (RRF).
+"""Hybrid search: BM25 + vector + RRF + optional cross-encoder reranking.
 
-This is our key differentiator — no existing MCP code search tool
-combines BM25 keyword matching with vector semantic search.
+Pipeline:
+  query → BM25 top N → ┐
+                        ├→ RRF merge → top N → [reranker] → top K
+  query → Vector top N → ┘
 """
 
 from __future__ import annotations
 
 import logging
 
-from .config import BM25_CANDIDATE_MULTIPLIER, DEFAULT_TOP_K
+from .config import BM25_CANDIDATE_MULTIPLIER, DEFAULT_TOP_K, ServerConfig
 from .embeddings import Embedder
 from .store import ChunkStore
 from .types import SearchResult
@@ -33,12 +35,60 @@ def rrf_merge(
     return sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
 
+# ---------------------------------------------------------------------------
+# Cross-encoder reranker (optional)
+# ---------------------------------------------------------------------------
+
+_reranker_model = None
+
+
+def _get_reranker(model_name: str):
+    """Lazy-load the cross-encoder model (cached for process lifetime)."""
+    global _reranker_model
+    if _reranker_model is None:
+        logger.info("Loading reranker model: %s", model_name)
+        from sentence_transformers import CrossEncoder
+        _reranker_model = CrossEncoder(model_name)
+    return _reranker_model
+
+
+def _rerank(
+    query: str,
+    results: list[SearchResult],
+    top_k: int,
+    model_name: str,
+) -> list[SearchResult]:
+    """Rerank results using a cross-encoder model.
+
+    Scores each (query, chunk_content) pair, re-sorts by score,
+    and returns the top K.
+    """
+    if not results:
+        return results
+
+    reranker = _get_reranker(model_name)
+    pairs = [(query, r.snippet) for r in results]
+    scores = reranker.predict(pairs)
+
+    for result, score in zip(results, scores):
+        result.score = round(float(score), 6)
+
+    reranked = sorted(results, key=lambda r: r.score, reverse=True)
+    return reranked[:top_k]
+
+
+# ---------------------------------------------------------------------------
+# Main search function
+# ---------------------------------------------------------------------------
+
+
 def hybrid_search(
     store: ChunkStore,
     embedder: Embedder,
     query: str,
     top_k: int = DEFAULT_TOP_K,
     file_glob: str | None = None,
+    config: ServerConfig | None = None,
 ) -> list[SearchResult]:
     """Run hybrid BM25 + vector search with RRF merging.
 
@@ -47,19 +97,35 @@ def hybrid_search(
     2. Run vector search (top candidates)
     3. Run BM25 search (top candidates)
     4. Merge with RRF
-    5. Fetch metadata and build SearchResult objects
+    5. (Optional) Rerank with cross-encoder
+    6. Fetch metadata and build SearchResult objects
     """
+    reranker_enabled = config.reranker if config else False
+    reranker_top_n = config.reranker_top_n if config else 20
+    reranker_model = (
+        config.reranker_model if config
+        else "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    )
+
     candidate_count = top_k * BM25_CANDIDATE_MULTIPLIER
+
+    # If reranker is on, fetch more candidates for RRF so the reranker
+    # has a richer pool to re-sort.
+    rrf_top = reranker_top_n if reranker_enabled else top_k
 
     # 1. Embed query
     query_vector = embedder.embed_query(query)
 
     # 2. Vector search
-    vec_ids = store.vector_search(query_vector, top_k=candidate_count, file_glob=file_glob)
+    vec_ids = store.vector_search(
+        query_vector, top_k=candidate_count, file_glob=file_glob,
+    )
     logger.debug("Vector search returned %d candidates", len(vec_ids))
 
     # 3. BM25 search
-    bm25_ids = store.bm25_search(query, top_k=candidate_count, file_glob=file_glob)
+    bm25_ids = store.bm25_search(
+        query, top_k=candidate_count, file_glob=file_glob,
+    )
     logger.debug("BM25 search returned %d candidates", len(bm25_ids))
 
     # 4. RRF merge
@@ -67,8 +133,8 @@ def hybrid_search(
         return []
 
     merged = rrf_merge([vec_ids, bm25_ids])
-    top_chunk_ids = [cid for cid, _ in merged[:top_k]]
-    score_map = dict(merged[:top_k])
+    top_chunk_ids = [cid for cid, _ in merged[:rrf_top]]
+    score_map = dict(merged[:rrf_top])
 
     # 5. Fetch metadata and build results
     metadatas = store.get_chunk_metadata(top_chunk_ids)
@@ -78,7 +144,6 @@ def hybrid_search(
         meta = metadatas.get(cid)
         if meta is None:
             continue
-        # Truncate snippet to avoid dumping huge chunks
         snippet = meta["content"]
         if len(snippet) > 1500:
             snippet = snippet[:1500] + "\n... (truncated)"
@@ -92,5 +157,14 @@ def hybrid_search(
             scope=meta["scope"],
             chunk_id=cid,
         ))
+
+    # 6. Rerank (optional)
+    if reranker_enabled and len(results) > 1:
+        logger.debug(
+            "Reranking %d results with %s", len(results), reranker_model,
+        )
+        results = _rerank(query, results, top_k, reranker_model)
+    else:
+        results = results[:top_k]
 
     return results

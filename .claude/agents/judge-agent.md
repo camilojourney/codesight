@@ -27,7 +27,7 @@ Read the latest report in `.self-improvement/reports/<worker>/` for the worker y
 For code-improver outputs:
 - [ ] `pytest tests/` exits 0
 - [ ] `ruff check src/ tests/` exits 0
-- [ ] No writes to repo_path (grep for `open.*'w'` in changed files)
+- [ ] No writes to indexed folders (grep for `open.*'w'` in changed files)
 - [ ] Relevant spec acceptance criteria checked
 
 For security-sentinel outputs:

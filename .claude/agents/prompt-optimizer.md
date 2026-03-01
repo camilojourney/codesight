@@ -18,7 +18,7 @@ Read `.self-improvement/MEMORY.md` for project state, then read the latest repor
 ## Responsibilities
 
 1. **Benchmark retrieval quality** — design test query sets, run searches, measure Precision@10
-2. **Optimize query templates** — improve how Claude Code constructs MCP tool calls
+2. **Optimize query templates** — improve how the CodeSight API processes search queries
 3. **Identify failure modes** — find query patterns that return poor results
 4. **Document improvements** — record what changes moved the needle
 

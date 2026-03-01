@@ -4,18 +4,17 @@
 
 ```bash
 # Isolate to a fresh data dir to avoid cache interference
-export SEMANTIC_SEARCH_DATA_DIR=/tmp/codesight-debug-$(date +%s)
-python -m semantic_search_mcp
+export CODESIGHT_DATA_DIR=/tmp/codesight-debug-$(date +%s)
+python -m codesight index /path/to/test-docs
+python -m codesight search "failing query" /path/to/test-docs
 ```
-
-Use MCP Inspector to send the exact failing tool call.
 
 ## 2. Check Logs
 
 ```bash
 # Enable debug logging
 export LOG_LEVEL=DEBUG
-python -m semantic_search_mcp
+python -m codesight search "query" /path/to/docs
 ```
 
 ## 3. Inspect State
@@ -23,7 +22,7 @@ python -m semantic_search_mcp
 For index corruption issues:
 ```python
 import lancedb
-db = lancedb.connect("~/.semantic-search/data/<repo-hash>/vectors")
+db = lancedb.connect("~/.codesight/data/<folder-hash>/lance")
 tbl = db.open_table("chunks")
 print(tbl.count_rows())
 ```
@@ -31,15 +30,15 @@ print(tbl.count_rows())
 For FTS issues:
 ```python
 import sqlite3
-conn = sqlite3.connect("~/.semantic-search/data/<repo-hash>/metadata.db")
+conn = sqlite3.connect("~/.codesight/data/<folder-hash>/metadata.db")
 print(conn.execute("SELECT count(*) FROM chunks_fts").fetchone())
 ```
 
 ## 4. Verify Read-Only Invariant
 
 ```bash
-# Should find ZERO results — any write to repo_path is a bug
-grep -rn "open.*'w'" src/semantic_search_mcp/
+# Should find ZERO results — any write to folder_path is a bug
+grep -rn "open.*'w'" src/codesight/
 ```
 
 ## 5. Write a Regression Test

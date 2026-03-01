@@ -1,9 +1,17 @@
 """CodeSight — AI-powered document search engine.
 
-Hybrid BM25 + vector retrieval with Claude answer synthesis.
+Hybrid BM25 + vector retrieval with pluggable LLM answer synthesis.
 """
 
 from .api import CodeSight
+from .config import ServerConfig
 from .types import Answer, IndexStats, RepoStatus, SearchResult
 
-__all__ = ["CodeSight", "Answer", "IndexStats", "RepoStatus", "SearchResult"]
+__all__ = [
+    "CodeSight",
+    "ServerConfig",
+    "Answer",
+    "IndexStats",
+    "RepoStatus",
+    "SearchResult",
+]

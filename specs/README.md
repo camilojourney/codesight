@@ -8,12 +8,12 @@ Feature specifications for codesight.
 |---|------|--------|-------|
 | 000 | [Template](000-template.md) | — | — |
 | 001 | [Core Search Engine](001-core-search-tools.md) | Implemented | v0.1 + v0.2 |
-| 002 | [Embedding Model Config](002-embedding-model-config.md) | Planned | v0.3 |
+| 002 | [Embedding Model Config](002-embedding-model-config.md) | Implemented | v0.3 |
 | 003 | [Incremental Refresh](003-incremental-refresh.md) | Planned | v0.5 |
 | 004 | [Tree-sitter Chunking](004-tree-sitter-chunking.md) | Planned | Future |
 | 005 | [Automatic Re-indexing](005-watch-unwatch-tools.md) | Deprecated | — |
-| 006 | [Pluggable LLM Backend](006-pluggable-llm-backend.md) | Planned | v0.3 |
-| 007 | [Cross-Encoder Reranking](007-cross-encoder-reranking.md) | Planned | v0.3 |
+| 006 | [Pluggable LLM Backend](006-pluggable-llm-backend.md) | Implemented | v0.3 |
+| 007 | [Cross-Encoder Reranking](007-cross-encoder-reranking.md) | Implemented | v0.3 |
 | 008 | [Docker + FastAPI Deployment](008-docker-deployment-fastapi.md) | Planned | v0.4 |
 
 ## Implementation History
@@ -30,10 +30,10 @@ Major pivot from MCP code search server to enterprise document search engine:
 - Streamlit web chat UI + CLI
 - See [Spec 001](001-core-search-tools.md) (updated to cover v0.2)
 
-### v0.3 — Pluggable LLM + Better Embeddings + Reranking (next)
+### v0.3 — Pluggable LLM + Better Embeddings + Reranking (completed)
 - Pluggable LLM backend: Claude, Azure OpenAI, OpenAI, Ollama — [Spec 006](006-pluggable-llm-backend.md)
-- Upgrade embedding to nomic-embed-text-v1.5 + optional API embeddings — [Spec 002](002-embedding-model-config.md)
-- Cross-encoder reranking for better precision — [Spec 007](007-cross-encoder-reranking.md)
+- Configurable embedding model + optional API embeddings (OpenAI) — [Spec 002](002-embedding-model-config.md)
+- Optional cross-encoder reranking after RRF for better precision — [Spec 007](007-cross-encoder-reranking.md)
 
 ### v0.4 — Docker Deployment + Production Server (planned)
 - Dockerfile, FastAPI server, auth, web chat UI for 50+ concurrent users — [Spec 008](008-docker-deployment-fastapi.md)

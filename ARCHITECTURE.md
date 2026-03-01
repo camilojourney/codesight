@@ -78,7 +78,8 @@ EXTERNAL (only when ask() is called — client chooses provider):
 | `search.py`     | Hybrid retrieval: BM25 + vector -> RRF merge -> return chunks.           |
 | `chunker.py`    | Code chunking (scope boundaries) + document chunking (paragraphs/pages). |
 | `parsers.py`    | Document text extraction: PDF (pymupdf), DOCX (python-docx), PPTX.      |
-| `embeddings.py` | sentence-transformers wrapper. Handles model loading + MPS acceleration. |
+| `llm.py`        | Pluggable LLM backend: Claude, Azure OpenAI, OpenAI, Ollama adapters.   |
+| `embeddings.py` | Embedding wrapper: local (sentence-transformers) or API (OpenAI).       |
 | `store.py`      | LanceDB + SQLite FTS5 dual-write. Content hash deduplication.            |
 | `config.py`     | Pydantic settings from env vars. File extension sets, chunk defaults.    |
 | `git_utils.py`  | .gitignore-aware file walking via `pathspec`.                            |
@@ -251,4 +252,4 @@ Every chunk gets a context header prepended before embedding:
 2. **Data directory location** (`~/.codesight/data/`) — changing this invalidates all existing indexes.
 3. **Content hash algorithm** — changing from `sha256[:16]` invalidates all deduplication state.
 4. **FTS5 trigger schema** — the SQLite triggers that sync FTS5 from the chunks table. Incorrect triggers cause silent search failures.
-5. **LLM system prompt** — the system prompt in `api.py._call_claude()` controls answer quality. Test changes with real documents.
+5. **LLM system prompt** — the `SYSTEM_PROMPT` in `llm.py` controls answer quality across all backends. Test changes with real documents.

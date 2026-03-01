@@ -1,6 +1,6 @@
 # codesight
 
-AI-powered document search engine — hybrid BM25 + vector + RRF retrieval with Claude answer synthesis.
+AI-powered document search engine — hybrid BM25 + vector + RRF retrieval with pluggable LLM answer synthesis.
 
 ## Commands
 

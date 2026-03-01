@@ -1,6 +1,6 @@
 [project]
 name = "codesight"
-version = "0.2.0"
+version = "0.3.0"
 description = "AI-powered document search engine — hybrid BM25 + vector retrieval with Claude answer synthesis"
 requires-python = ">=3.11"
 dependencies = [

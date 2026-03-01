@@ -86,6 +86,7 @@ class CodeSight:
         return hybrid_search(
             self.store, self.embedder, query,
             top_k=top_k, file_glob=file_glob,
+            config=self.config,
         )
 
     def ask(self, question: str, top_k: int = 5, file_glob: str | None = None) -> Answer:

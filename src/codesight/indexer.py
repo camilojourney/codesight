@@ -120,7 +120,10 @@ def index_repo(
     if not repo_path.is_dir():
         raise ValueError(f"Not a directory: {repo_path}")
 
-    embedder = get_embedder(config.embedding_model, config.embedding_dim, backend=config.embedding_backend)
+    embedder = get_embedder(
+        config.embedding_model, config.embedding_dim,
+        backend=config.embedding_backend,
+    )
     store = ChunkStore(repo_path, embedding_dim=config.embedding_dim)
 
     # Store canonical path

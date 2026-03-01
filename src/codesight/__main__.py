@@ -34,7 +34,7 @@ def main():
     p_search.add_argument("-k", "--top-k", type=int, default=8, help="Number of results")
 
     # ask
-    p_ask = sub.add_parser("ask", help="Ask a question (Claude synthesizes answer)")
+    p_ask = sub.add_parser("ask", help="Ask a question (LLM synthesizes answer)")
     p_ask.add_argument("question", help="Question to ask")
     p_ask.add_argument("path", nargs="?", default=".", help="Folder path (default: .)")
     p_ask.add_argument("-k", "--top-k", type=int, default=5, help="Chunks to use as context")

@@ -24,10 +24,10 @@ Keep read-only invariant intact — never write to repo_path.
 
 ```bash
 # No writes to repo_path
-grep -rn "open.*'w'" src/semantic_search_mcp/
+grep -rn "open.*'w'" src/codesight/
 
 # No path traversal
-grep -rn "\.\./" src/semantic_search_mcp/
+grep -rn "\.\./" src/codesight/
 ```
 
 ## 5. Run Full Suite
