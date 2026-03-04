@@ -55,11 +55,14 @@ class GraphConnector:
     def sync(self) -> dict[str, int]:
         logger.info("m365.sync.start")
         self._ensure_cache_dirs()
-        synced = {
-            "drive": self.sync_drive(),
-            "mail": self.sync_mail(),
-            "notes": self.sync_notes(),
-        }
+        synced: dict[str, int] = {}
+        for source, sync_fn in [("drive", self.sync_drive), ("mail", self.sync_mail), ("notes", self.sync_notes)]:
+            try:
+                synced[source] = sync_fn()
+            except Exception as exc:
+                logger.warning("m365.sync.source_failed source=%s error=%s", source, exc)
+                print(f"⚠ {source} sync failed: {exc}")
+                synced[source] = 0
         # SPEC-011-006: Existing CodeSight index() pipeline is reused after connector sync.
         self.engine_factory(self.cache_dir).index()
         logger.info("m365.sync.complete")
@@ -68,7 +71,13 @@ class GraphConnector:
     # SPEC-011-002: OneDrive/SharePoint files are fetched via Graph delta API and cached locally.
     def sync_drive(self) -> int:
         start_url = self.delta_state("drive") or "/me/drive/root/delta"
-        items, delta_link = self._collect_delta_items(start_url)
+        try:
+            items, delta_link = self._collect_delta_items(start_url)
+        except (RuntimeError, ConnectionError) as exc:
+            if "SPO license" in str(exc) or "BadRequest" in str(exc):
+                logger.info("m365.sync.drive_fallback reason=no_delta_support")
+                return self._sync_drive_children()
+            raise
 
         written = 0
         for item in items:
@@ -106,6 +115,42 @@ class GraphConnector:
 
         if delta_link:
             self.delta_state("drive", delta_link)
+        return written
+
+    # Fallback for personal OneDrive accounts without SPO/delta support.
+    def _sync_drive_children(self) -> int:
+        written = 0
+        queue = ["/me/drive/root/children"]
+        while queue:
+            url = queue.pop()
+            data = self._graph_get_json(url, params={"$top": "200"})
+            for item in data.get("value", []):
+                item_id = item.get("id")
+                if not item_id:
+                    continue
+                if "folder" in item:
+                    queue.append(f"/me/drive/items/{item_id}/children")
+                    continue
+                if "file" not in item:
+                    continue
+                file_name = item.get("name") or item_id
+                suffix = Path(file_name).suffix.lower()
+                if suffix not in INDEXABLE_EXTENSIONS:
+                    continue
+                if int(item.get("size") or 0) > self.max_file_size_bytes:
+                    logger.warning("m365.sync.skip file_too_large id=%s name=%s", item_id, file_name)
+                    continue
+                try:
+                    file_bytes = self._graph_get_bytes(f"/me/drive/items/{item_id}/content")
+                except PermissionError:
+                    logger.warning("m365.sync.skip permission_denied source=drive id=%s", item_id)
+                    continue
+                target = self.drive_dir / f"{item_id}__{self._safe_name(file_name)}"
+                self._write_bytes(target, file_bytes)
+                written += 1
+            next_link = data.get("@odata.nextLink")
+            if next_link:
+                queue.append(next_link)
         return written
 
     # SPEC-011-003: Outlook mail messages are converted to plain-text files with metadata headers.
@@ -157,7 +202,7 @@ class GraphConnector:
         start_url = self.delta_state("notes") or "/me/onenote/pages"
         params = {
             "$select": "id,title,contentUrl",
-            "$top": "500",
+            "$top": "100",
         }
         items, delta_link = self._collect_delta_items(start_url, params=params)
 

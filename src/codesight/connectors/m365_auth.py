@@ -114,6 +114,13 @@ class M365Authenticator:
 
         return token_result
 
+    def reset(self) -> None:
+        """Clear cached tokens. Call when switching between accounts/tenants."""
+        if self.cache_path.exists():
+            self.cache_path.unlink()
+        self._token_cache = self._load_token_cache()
+        self._app = self._build_app()
+
     # SPEC-011-001: Tenant-specific cache directory naming is derived from
     # authenticated account context.
     def tenant_hash(self) -> str:

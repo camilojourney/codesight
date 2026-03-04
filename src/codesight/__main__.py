@@ -51,6 +51,11 @@ def main():
         choices=["m365"],
         help="External source to sync",
     )
+    p_sync.add_argument(
+        "--reset-auth",
+        action="store_true",
+        help="Clear cached M365 tokens before syncing (use when switching accounts)",
+    )
 
     # bot
     p_bot = sub.add_parser("bot", help="Start Teams bot server")
@@ -214,6 +219,9 @@ def _run_sync(args):
     from .connectors import GraphConnector
 
     connector = GraphConnector.from_source(args.source)
+    if getattr(args, "reset_auth", False):
+        connector.auth.reset()
+        print("Token cache cleared. You will need to re-authenticate.")
     result = connector.sync()
     print(json.dumps(result, indent=2))
 

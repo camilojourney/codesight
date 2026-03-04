@@ -7,6 +7,7 @@ querying full-text, and managing repo metadata.
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -115,8 +116,22 @@ class FTSSidecar:
         )
         return dict(cursor.fetchall())
 
+    @staticmethod
+    def _sanitize_fts5_query(query: str) -> str:
+        """Escape special FTS5 characters so user input is treated as plain terms."""
+        # Remove characters that FTS5 interprets as operators
+        sanitized = re.sub(r'[*?{}()\[\]^~@#$%&!:;,.<>=/\\|+\-]', ' ', query)
+        # Collapse whitespace and strip
+        sanitized = re.sub(r'\s+', ' ', sanitized).strip()
+        # Quote each word to prevent FTS5 operator interpretation
+        if sanitized:
+            words = sanitized.split()
+            sanitized = ' '.join(f'"{w}"' for w in words if w)
+        return sanitized or '""'
+
     def bm25_search(self, query: str, top_k: int = 20, file_glob: str | None = None) -> list[str]:
         """Run BM25 search, returning chunk_ids ranked by relevance."""
+        query = self._sanitize_fts5_query(query)
         if file_glob:
             # Convert glob to SQL LIKE pattern
             like_pattern = file_glob.replace("*", "%").replace("?", "_")
