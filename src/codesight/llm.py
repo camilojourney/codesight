@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
@@ -32,6 +33,52 @@ SYSTEM_PROMPT = (
 )
 
 REQUEST_TIMEOUT = 30  # seconds
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    if status_code == 429:
+        return True
+    message = str(exc).lower()
+    return "429" in message or "rate limit" in message or "ratelimit" in message
+
+
+def _is_timeout_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    markers = ("timeout", "timed out", "read timed out")
+    return any(marker in message for marker in markers)
+
+
+def _is_not_found_error(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    if status_code == 404:
+        return True
+    return "404" in str(exc)
+
+
+def _run_cloud_call_with_retry(backend: str, fn):
+    attempts = 0
+    while True:
+        try:
+            return fn()
+        except Exception as exc:
+            # EDGE-006-004: Retry once on transient cloud rate limits.
+            if _is_rate_limit_error(exc):
+                if attempts < 1:
+                    attempts += 1
+                    time.sleep(2)
+                    continue
+                raise RuntimeError(
+                    f"LLM backend rate limited ({backend}). "
+                    "Retry after a brief pause or reduce concurrent usage."
+                ) from None
+            # EDGE-006-005: Normalize timeout error guidance.
+            if _is_timeout_error(exc):
+                raise TimeoutError(
+                    "LLM request timed out after 30s. Check network connectivity or switch "
+                    "to CODESIGHT_LLM_BACKEND=ollama for local inference."
+                ) from None
+            raise
 
 
 @dataclass
@@ -85,13 +132,16 @@ class ClaudeBackend:
     def generate(self, system_prompt: str, user_prompt: str) -> str:
         import anthropic
 
-        client = anthropic.Anthropic(api_key=self._api_key, timeout=REQUEST_TIMEOUT)
-        message = client.messages.create(
-            model=self._model,
-            max_tokens=1024,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
+        def _call():
+            client = anthropic.Anthropic(api_key=self._api_key, timeout=REQUEST_TIMEOUT)
+            return client.messages.create(
+                model=self._model,
+                max_tokens=1024,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+
+        message = _run_cloud_call_with_retry("claude", _call)
         return message.content[0].text
 
     # SPEC-010-002: Claude responses return best-effort citation objects.
@@ -103,13 +153,16 @@ class ClaudeBackend:
     ) -> LLMResponse:
         import anthropic
 
-        client = anthropic.Anthropic(api_key=self._api_key, timeout=REQUEST_TIMEOUT)
-        message = client.messages.create(
-            model=self._model,
-            max_tokens=1024,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
+        def _call():
+            client = anthropic.Anthropic(api_key=self._api_key, timeout=REQUEST_TIMEOUT)
+            return client.messages.create(
+                model=self._model,
+                max_tokens=1024,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+
+        message = _run_cloud_call_with_retry("claude", _call)
 
         text_parts: list[str] = []
         citations: list[Citation] = []
@@ -155,7 +208,7 @@ class AzureOpenAIBackend:
     def __init__(self) -> None:
         self._endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
         self._api_key = os.environ.get("AZURE_OPENAI_API_KEY")
-        self._deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+        self._deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
         self._api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21")
 
         if not self._endpoint:
@@ -167,6 +220,10 @@ class AzureOpenAIBackend:
             raise ValueError(
                 "AZURE_OPENAI_API_KEY environment variable is required for the Azure backend."
             )
+        if not self._deployment:
+            raise ValueError(
+                "AZURE_OPENAI_DEPLOYMENT environment variable is required for the Azure backend."
+            )
 
     @property
     def model_id(self) -> str:
@@ -175,20 +232,31 @@ class AzureOpenAIBackend:
     def generate(self, system_prompt: str, user_prompt: str) -> str:
         from openai import AzureOpenAI
 
-        client = AzureOpenAI(
-            azure_endpoint=self._endpoint,
-            api_key=self._api_key,
-            api_version=self._api_version,
-            timeout=REQUEST_TIMEOUT,
-        )
-        response = client.chat.completions.create(
-            model=self._deployment,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=1024,
-        )
+        def _call():
+            client = AzureOpenAI(
+                azure_endpoint=self._endpoint,
+                api_key=self._api_key,
+                api_version=self._api_version,
+                timeout=REQUEST_TIMEOUT,
+            )
+            return client.chat.completions.create(
+                model=self._deployment,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=1024,
+            )
+
+        try:
+            response = _run_cloud_call_with_retry("azure", _call)
+        except Exception as exc:
+            if _is_not_found_error(exc):
+                raise ValueError(
+                    f"Azure OpenAI deployment '{self._deployment}' not found. Verify "
+                    "AZURE_OPENAI_DEPLOYMENT matches an active deployment in your Azure tenant."
+                ) from None
+            raise
         return response.choices[0].message.content
 
     def generate_with_citations(
@@ -223,15 +291,18 @@ class OpenAIBackend:
     def generate(self, system_prompt: str, user_prompt: str) -> str:
         from openai import OpenAI
 
-        client = OpenAI(api_key=self._api_key, timeout=REQUEST_TIMEOUT)
-        response = client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=1024,
-        )
+        def _call():
+            client = OpenAI(api_key=self._api_key, timeout=REQUEST_TIMEOUT)
+            return client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=1024,
+            )
+
+        response = _run_cloud_call_with_retry("openai", _call)
         return response.choices[0].message.content
 
     def generate_with_citations(
@@ -322,6 +393,7 @@ def get_backend(
             - openai: OpenAI model ID (default: gpt-4o)
             - ollama: Ollama model name (default: llama3.1)
     """
+    # SPEC-006-001: Single env-selected backend factory with strict validation.
     if backend_name not in _VALID_BACKENDS:
         raise ValueError(
             f"Unknown LLM backend: '{backend_name}'. "

@@ -191,7 +191,8 @@ def index_repo(
     if commit:
         store.last_commit = commit
     store.touch_indexed()
-    store.fts.set_meta("embedding_model", config.embedding_model)
+    store.fts.set_meta("embedding_model", embedder.model_name)
+    store.fts.set_meta("embedding_dim", str(embedder.expected_dim))
 
     elapsed = time.time() - start_time
     logger.info(

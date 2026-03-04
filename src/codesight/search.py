@@ -40,15 +40,31 @@ def rrf_merge(
 # ---------------------------------------------------------------------------
 
 _reranker_model = None
+_reranker_model_name: str | None = None
+_reranker_disabled_for_session = False
 
 
 def _get_reranker(model_name: str):
     """Lazy-load the cross-encoder model (cached for process lifetime)."""
-    global _reranker_model
-    if _reranker_model is None:
+    global _reranker_model, _reranker_model_name, _reranker_disabled_for_session
+    if _reranker_disabled_for_session:
+        return None
+
+    if _reranker_model is None or _reranker_model_name != model_name:
         logger.info("Loading reranker model: %s", model_name)
-        from sentence_transformers import CrossEncoder
-        _reranker_model = CrossEncoder(model_name)
+        try:
+            from sentence_transformers import CrossEncoder
+
+            _reranker_model = CrossEncoder(model_name)
+            _reranker_model_name = model_name
+        except Exception:
+            # EDGE-007-007: Download/load failure disables reranking for this session.
+            logger.warning(
+                "Reranker model download failed - reranking disabled for this session. "
+                "Pre-download the model on a machine with internet access."
+            )
+            _reranker_disabled_for_session = True
+            return None
     return _reranker_model
 
 
@@ -63,17 +79,37 @@ def _rerank(
     Scores each (query, chunk_content) pair, re-sorts by score,
     and returns the top K.
     """
+    # SPEC-007-001: Insert cross-encoder reranking after RRF when enabled.
     if not results:
         return results
 
     reranker = _get_reranker(model_name)
-    pairs = [(query, r.snippet) for r in results]
-    scores = reranker.predict(pairs)
+    if reranker is None:
+        return results[:top_k]
 
-    for result, score in zip(results, scores):
+    scored_results: list[SearchResult] = []
+    tail_results: list[SearchResult] = []
+    for result in results:
+        if result.snippet.strip():
+            scored_results.append(result)
+        else:
+            # EDGE-007-002: Empty chunk content is skipped and kept at tail.
+            tail_results.append(result)
+
+    if not scored_results:
+        return results[:top_k]
+
+    pairs = [(query, r.snippet) for r in scored_results]
+    try:
+        scores = reranker.predict(pairs)
+    except Exception:
+        logger.warning("Reranker inference failed - returning RRF ranking only")
+        return results[:top_k]
+
+    for result, score in zip(scored_results, scores):
         result.score = round(float(score), 6)
 
-    reranked = sorted(results, key=lambda r: r.score, reverse=True)
+    reranked = sorted(scored_results, key=lambda r: r.score, reverse=True) + tail_results
     return reranked[:top_k]
 
 
@@ -100,6 +136,7 @@ def hybrid_search(
     5. (Optional) Rerank with cross-encoder
     6. Fetch metadata and build SearchResult objects
     """
+    # SPEC-007-003: Candidate set sizing is configurable via reranker_top_n.
     reranker_enabled = config.reranker if config else False
     reranker_top_n = config.reranker_top_n if config else 20
     reranker_model = (
@@ -111,7 +148,11 @@ def hybrid_search(
 
     # If reranker is on, fetch more candidates for RRF so the reranker
     # has a richer pool to re-sort.
-    rrf_top = reranker_top_n if reranker_enabled else top_k
+    if reranker_enabled:
+        rrf_top = max(reranker_top_n, top_k)
+        candidate_count = max(candidate_count, rrf_top)
+    else:
+        rrf_top = top_k
 
     # 1. Embed query
     query_vector = embedder.embed_query(query)

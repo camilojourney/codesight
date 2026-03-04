@@ -9,7 +9,12 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import ServerConfig
+from .config import (
+    ServerConfig,
+    normalize_embedding_model_name,
+    resolve_embedding_dim,
+    validate_embedding_model,
+)
 from .embeddings import get_embedder
 from .indexer import index_repo
 from .llm import SYSTEM_PROMPT, LLMBackend, get_backend
@@ -47,6 +52,11 @@ class CodeSight:
             raise ValueError(f"Not a directory: {self.folder_path}")
 
         self.config = config or ServerConfig()
+        self.config.embedding_model = validate_embedding_model(
+            normalize_embedding_model_name(self.config.embedding_model),
+            self.config.embedding_backend,
+        )
+        self.config.embedding_dim = resolve_embedding_dim(self.config.embedding_model)
         self._store: ChunkStore | None = None
         self._embedder = None
         self._llm: LLMBackend | None = None
@@ -87,6 +97,18 @@ class CodeSight:
         Handles code files, text files, PDFs, DOCX, and PPTX.
         Unchanged files are skipped (content hash dedup).
         """
+        if not force_rebuild and self.store.is_indexed and self._embedding_model_changed():
+            stored_model = self.store.fts.get_meta("embedding_model") or "unknown"
+            stored_dim = self.store.fts.get_meta("embedding_dim") or "?"
+            logger.warning(
+                "Embedding model changed (%s %sd -> %s %dd). Rebuilding index from scratch.",
+                stored_model,
+                stored_dim,
+                self.config.embedding_model,
+                resolve_embedding_dim(self.config.embedding_model),
+            )
+            force_rebuild = True
+
         stats = index_repo(self.folder_path, self.config, force_rebuild=force_rebuild)
         # Reset store to pick up new data
         self._store = None
@@ -245,10 +267,17 @@ class CodeSight:
             logger.info("No index found for %s — building now...", self.folder_path)
             self.index()
         elif self._embedding_model_changed():
-            stored = self.store.fts.get_meta("embedding_model") or "unknown"
+            stored_model = self.store.fts.get_meta("embedding_model") or "unknown"
+            stored_dim = self.store.fts.get_meta("embedding_dim") or "?"
+            current_model = self.config.embedding_model
+            current_dim = resolve_embedding_dim(current_model)
             logger.warning(
-                "Embedding model changed (%s → %s). Forcing full rebuild.",
-                stored, self.config.embedding_model,
+                "Embedding model changed (%s %sd → %s %dd). "
+                "Rebuilding index from scratch.",
+                stored_model,
+                stored_dim,
+                current_model,
+                current_dim,
             )
             self.index(force_rebuild=True)
         elif self._is_stale():
@@ -257,10 +286,21 @@ class CodeSight:
 
     def _embedding_model_changed(self) -> bool:
         """Check if the configured embedding model differs from the indexed one."""
+        # SPEC-002-003: Detect model or dimensionality mismatch and force rebuild.
         stored_model = self.store.fts.get_meta("embedding_model")
+        stored_dim = self.store.fts.get_meta("embedding_dim")
         if stored_model is None:
             return False  # legacy index without model tracking — don't force rebuild
-        return stored_model != self.config.embedding_model
+        current_model = self.config.embedding_model
+        if stored_model != current_model:
+            return True
+
+        if stored_dim is None:
+            return False
+        try:
+            return int(stored_dim) != resolve_embedding_dim(current_model)
+        except ValueError:
+            return True
 
     def _is_stale(self) -> bool:
         """Check if the index is older than the staleness threshold."""

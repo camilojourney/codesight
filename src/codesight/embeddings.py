@@ -9,14 +9,43 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from functools import lru_cache
 from typing import Protocol
 
 import numpy as np
 
-from .config import DEFAULT_EMBEDDING_DIM, DEFAULT_EMBEDDING_MODEL, resolve_embedding_dim
+from .config import (
+    DEFAULT_EMBEDDING_BACKEND,
+    DEFAULT_EMBEDDING_DIM,
+    DEFAULT_EMBEDDING_MODEL,
+    normalize_embedding_model_name,
+    resolve_embedding_dim,
+    validate_embedding_model,
+)
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_MODEL_IDS: dict[str, str] = {
+    "nomic-embed-text-v1.5": "nomic-ai/nomic-embed-text-v1.5",
+    "all-MiniLM-L6-v2": "sentence-transformers/all-MiniLM-L6-v2",
+    "mxbai-embed-large": "mixedbread-ai/mxbai-embed-large-v1",
+    "jina-embeddings-v2-base-code": "jinaai/jina-embeddings-v2-base-code",
+}
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    if status_code == 429:
+        return True
+    message = str(exc).lower()
+    return "429" in message or "rate limit" in message or "ratelimit" in message
+
+
+def _is_network_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    markers = ("connect", "unreachable", "dns", "timed out", "timeout", "connection")
+    return any(marker in message for marker in markers)
 
 
 class Embedder(Protocol):
@@ -45,7 +74,8 @@ class LocalEmbedder:
         model_name: str = DEFAULT_EMBEDDING_MODEL,
         expected_dim: int = DEFAULT_EMBEDDING_DIM,
     ) -> None:
-        self.model_name = model_name
+        self.model_name = normalize_embedding_model_name(model_name)
+        self._runtime_model_id = _LOCAL_MODEL_IDS.get(self.model_name, self.model_name)
         self.expected_dim = expected_dim
         self._model = None
 
@@ -56,7 +86,16 @@ class LocalEmbedder:
             logger.info("Loading embedding model: %s", self.model_name)
             from sentence_transformers import SentenceTransformer
 
-            self._model = SentenceTransformer(self.model_name, trust_remote_code=True)
+            try:
+                self._model = SentenceTransformer(self._runtime_model_id, trust_remote_code=True)
+            except Exception as exc:
+                # EDGE-002-001: Clear install/download guidance for missing local models.
+                raise ValueError(
+                    f"Model '{self.model_name}' not found locally. Install via: "
+                    "python -c 'from sentence_transformers import SentenceTransformer; "
+                    f"SentenceTransformer(\"{self.model_name}\")' or run "
+                    "pip install sentence-transformers first."
+                ) from exc
             actual_dim = self._model.get_sentence_embedding_dimension()
             if actual_dim != self.expected_dim:
                 logger.warning(
@@ -103,7 +142,7 @@ class APIEmbedder:
                 "OPENAI_API_KEY environment variable is required for API embedding backend. "
                 "Set it or switch to local: CODESIGHT_EMBEDDING_BACKEND=local"
             )
-        self.model_name = model_name
+        self.model_name = normalize_embedding_model_name(model_name)
         self.expected_dim = expected_dim
         self._client = None
 
@@ -116,19 +155,62 @@ class APIEmbedder:
 
     def embed(self, texts: list[str]) -> np.ndarray:
         """Embed texts via OpenAI API in batches of 512."""
+        # SPEC-002-004: API backend embeds in bounded batches for payload safety.
         if not texts:
             return np.empty((0, self.expected_dim), dtype=np.float32)
 
         all_embeddings = []
         batch_size = 512
+        total_batches = (len(texts) + batch_size - 1) // batch_size
 
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
-            response = self.client.embeddings.create(
-                model=self.model_name,
-                input=batch,
-            )
+            batch_num = (i // batch_size) + 1
+            if len(texts) > batch_size:
+                logger.info(
+                    "Embedding batch %d/%d via OpenAI (%d texts)",
+                    batch_num,
+                    total_batches,
+                    len(batch),
+                )
+
+            attempts = 0
+            while True:
+                try:
+                    response = self.client.embeddings.create(
+                        model=self.model_name,
+                        input=batch,
+                    )
+                    break
+                except Exception as exc:
+                    # EDGE-002-003: 429s get bounded exponential backoff.
+                    if _is_rate_limit_error(exc):
+                        if attempts < 3:
+                            wait_seconds = 2**attempts
+                            time.sleep(wait_seconds)
+                            attempts += 1
+                            continue
+                        raise RuntimeError(
+                            "OpenAI embedding API rate limited after 3 retries. "
+                            "Reduce batch size or wait before re-indexing."
+                        ) from None
+                    # EDGE-002-002: Network failures suggest local fallback.
+                    if _is_network_error(exc):
+                        raise ConnectionError(
+                            "OpenAI embedding API unreachable. "
+                            "Set CODESIGHT_EMBEDDING_BACKEND=local to use a local model "
+                            "with no network dependency."
+                        ) from None
+                    raise
+
             batch_vecs = [item.embedding for item in response.data]
+            if batch_vecs:
+                actual_dim = len(batch_vecs[0])
+                if actual_dim != self.expected_dim:
+                    raise ValueError(
+                        f"Embedding dimension mismatch for {self.model_name}: "
+                        f"expected {self.expected_dim}, got {actual_dim}"
+                    )
             all_embeddings.extend(batch_vecs)
 
         result = np.array(all_embeddings, dtype=np.float32)
@@ -152,7 +234,7 @@ class APIEmbedder:
 def get_embedder(
     model_name: str = DEFAULT_EMBEDDING_MODEL,
     expected_dim: int = DEFAULT_EMBEDDING_DIM,
-    backend: str = "local",
+    backend: str = DEFAULT_EMBEDDING_BACKEND,
 ) -> Embedder:
     """Return a cached Embedder singleton.
 
@@ -161,14 +243,15 @@ def get_embedder(
         expected_dim: Expected embedding dimension.
         backend: 'local' for sentence-transformers, 'api' for OpenAI.
     """
+    canonical_model = validate_embedding_model(model_name, backend)
     if expected_dim != DEFAULT_EMBEDDING_DIM:
         dim = expected_dim
     else:
-        dim = resolve_embedding_dim(model_name)
+        dim = resolve_embedding_dim(canonical_model)
 
     if backend == "api":
-        logger.info("Using API embedding backend: %s", model_name)
-        return APIEmbedder(model_name=model_name, expected_dim=dim)
+        logger.info("Using API embedding backend: %s", canonical_model)
+        return APIEmbedder(model_name=canonical_model, expected_dim=dim)
 
-    logger.info("Using local embedding backend: %s", model_name)
-    return LocalEmbedder(model_name=model_name, expected_dim=dim)
+    logger.info("Using local embedding backend: %s", canonical_model)
+    return LocalEmbedder(model_name=canonical_model, expected_dim=dim)

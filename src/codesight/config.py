@@ -40,27 +40,80 @@ def repo_fts_db_path(repo_path: str | Path) -> Path:
 # Defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_EMBEDDING_MODEL = os.environ.get(
-    "CODESIGHT_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
-)
-DEFAULT_EMBEDDING_BACKEND = os.environ.get("CODESIGHT_EMBEDDING_BACKEND", "local")
-
-# Allowlist of tested embedding models with their dimensions.
+# SPEC-002-002: Allowlisted embedding models with fixed dimensions.
 EMBEDDING_MODEL_REGISTRY: dict[str, int] = {
-    "sentence-transformers/all-MiniLM-L6-v2": 384,
-    "nomic-ai/nomic-embed-text-v1.5": 768,
-    "mixedbread-ai/mxbai-embed-large-v1": 1024,
-    "jinaai/jina-embeddings-v2-base-code": 768,
-    "text-embedding-3-large": 3072,  # OpenAI API model
-    "text-embedding-3-small": 1536,  # OpenAI API model
+    "nomic-embed-text-v1.5": 768,
+    "all-MiniLM-L6-v2": 384,
+    "mxbai-embed-large": 1024,
+    "jina-embeddings-v2-base-code": 768,
+    "text-embedding-3-large": 3072,
+    "text-embedding-3-small": 1536,
 }
+
+EMBEDDING_MODEL_ALIASES: dict[str, str] = {
+    "nomic-ai/nomic-embed-text-v1.5": "nomic-embed-text-v1.5",
+    "sentence-transformers/all-MiniLM-L6-v2": "all-MiniLM-L6-v2",
+    "mixedbread-ai/mxbai-embed-large-v1": "mxbai-embed-large",
+    "jinaai/jina-embeddings-v2-base-code": "jina-embeddings-v2-base-code",
+}
+
+LOCAL_EMBEDDING_MODELS: set[str] = {
+    "nomic-embed-text-v1.5",
+    "all-MiniLM-L6-v2",
+    "mxbai-embed-large",
+    "jina-embeddings-v2-base-code",
+}
+
+API_EMBEDDING_MODELS: set[str] = {
+    "text-embedding-3-large",
+    "text-embedding-3-small",
+}
+
+
+def normalize_embedding_model_name(model_name: str) -> str:
+    """Normalize legacy/provider-prefixed model names to canonical IDs."""
+    return EMBEDDING_MODEL_ALIASES.get(model_name, model_name)
+
+
+def valid_embedding_models() -> list[str]:
+    return sorted(EMBEDDING_MODEL_REGISTRY.keys())
+
+
+def validate_embedding_model(model_name: str, backend: str) -> str:
+    """Validate model name for backend and return canonical model ID."""
+    # SPEC-002-002: Model selection is allowlist-validated before embedding starts.
+    canonical = normalize_embedding_model_name(model_name)
+    if canonical not in EMBEDDING_MODEL_REGISTRY:
+        raise ValueError(
+            "Invalid embedding model "
+            f"'{model_name}'. Valid options: {', '.join(valid_embedding_models())}"
+        )
+
+    if backend == "api" and canonical not in API_EMBEDDING_MODELS:
+        raise ValueError(
+            f"Embedding model '{canonical}' is not valid for backend 'api'. "
+            f"Valid options: {', '.join(sorted(API_EMBEDDING_MODELS))}"
+        )
+    if backend == "local" and canonical not in LOCAL_EMBEDDING_MODELS:
+        raise ValueError(
+            f"Embedding model '{canonical}' is not valid for backend 'local'. "
+            f"Valid options: {', '.join(sorted(LOCAL_EMBEDDING_MODELS))}"
+        )
+    return canonical
 
 
 def resolve_embedding_dim(model_name: str) -> int:
     """Return expected embedding dimension for a model. Falls back to 384."""
-    return EMBEDDING_MODEL_REGISTRY.get(model_name, 384)
+    canonical = normalize_embedding_model_name(model_name)
+    return EMBEDDING_MODEL_REGISTRY.get(canonical, 384)
 
 
+DEFAULT_EMBEDDING_BACKEND = os.environ.get("CODESIGHT_EMBEDDING_BACKEND", "local")
+# SPEC-002-001: Default embedding model upgrade for higher-quality retrieval.
+DEFAULT_EMBEDDING_MODEL = validate_embedding_model(
+    os.environ.get("CODESIGHT_EMBEDDING_MODEL", "nomic-embed-text-v1.5"),
+    DEFAULT_EMBEDDING_BACKEND,
+)
 DEFAULT_EMBEDDING_DIM = resolve_embedding_dim(DEFAULT_EMBEDDING_MODEL)
 DEFAULT_TOP_K = 8
 DEFAULT_CHUNK_MAX_LINES = 200
