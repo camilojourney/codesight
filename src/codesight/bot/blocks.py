@@ -86,6 +86,21 @@ def answer_blocks(
     )
     return blocks
 
+# // SPEC-015-005: Backward-compatible alias for callers expecting build_* naming.
+def build_answer_blocks(
+    *,
+    answer_text: str,
+    confidence_level: str,
+    sources: list[Any],
+    note: str | None = None,
+) -> list[dict[str, Any]]:
+    return answer_blocks(
+        answer_text=answer_text,
+        confidence_level=confidence_level,
+        sources=sources,
+        note=note,
+    )
+
 
 # // EDGE-015-007: Empty-index responses are explicit setup guidance for admins.
 def no_index_blocks(workspace_name: str) -> list[dict[str, Any]]:

@@ -218,7 +218,7 @@ class GraphConnector:
 
             content_url = item.get("contentUrl") or f"/me/onenote/pages/{page_id}/content"
             markdown = self._html_to_markdown(self._graph_get_text(content_url)).strip()
-            if not markdown:
+            if not self._has_meaningful_text(markdown):
                 # EDGE-011-003: Image-only/empty OneNote pages are skipped as non-indexable content.
                 logger.warning("m365.sync.skip empty_note id=%s", page_id)
                 continue
@@ -413,6 +413,14 @@ class GraphConnector:
     def _html_to_text(self, html: str) -> str:
         markdown = self._html_to_markdown(html)
         return re.sub(r"\s+", " ", markdown).strip()
+
+    # EDGE-011-003: Pages without textual content (for example image-only markdown)
+    # are treated as empty and excluded from indexing.
+    def _has_meaningful_text(self, markdown: str) -> bool:
+        without_images = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", markdown)
+        normalized = re.sub(r"[`*_>#\-|~\[\]\(\)!]", " ", without_images)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        return bool(re.search(r"[A-Za-z0-9]", normalized))
 
     # SPEC-011-002: Cached binary files are written atomically into the managed connector directory.
     def _write_bytes(self, path: Path, payload: bytes) -> None:
