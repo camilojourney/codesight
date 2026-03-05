@@ -87,6 +87,11 @@ def main():
         help="Optional path to indexed content (defaults to CODESIGHT_BOT_DATA_PATH or cwd)",
     )
 
+    # slack bot
+    p_slack_bot = sub.add_parser("slack-bot", help="Start Slack bot server")
+    p_slack_bot.add_argument("--host", default="0.0.0.0", help="Slack bot bind host")
+    p_slack_bot.add_argument("--port", type=int, default=3000, help="Slack bot bind port")
+
     # demo
     sub.add_parser("demo", help="Launch Streamlit web chat UI")
 
@@ -232,6 +237,9 @@ def main():
     if args.command == "bot":
         _run_bot(args)
         return
+    if args.command == "slack-bot":
+        _run_slack_bot(args)
+        return
     if args.command == "dashboard":
         _run_dashboard(args)
         return
@@ -332,6 +340,12 @@ def _run_bot(args):
     from .bot.app import run_bot_server
 
     run_bot_server(data_path=args.data_path)
+
+
+def _run_slack_bot(args):
+    from .bot.slack import run_slack_bot
+
+    run_slack_bot(host=args.host, port=args.port)
 
 
 def _run_dashboard(args):
