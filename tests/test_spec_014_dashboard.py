@@ -201,7 +201,7 @@ def test_spec_014_003_duplicate_name_error(dashboard_context):
     )
 
     assert response.status_code == 400
-    assert "Workspace 'Sales' already exists." in response.text
+    assert "Workspace &#39;Sales&#39; already exists." in response.text
 
 
 def test_spec_014_003_invalid_name_error(dashboard_context):
