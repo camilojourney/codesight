@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+    <h1 style="margin:0;">Workspaces</h1>
+    <a class="button" href="/workspaces/new">Create Workspace</a>
+  </div>
+</div>
+
+{% if message %}
+<div class="message success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="message error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  {% if not workspace_rows %}
+  <p class="muted">No workspaces yet. <a href="/workspaces/new">Create one now.</a></p>
+  {% else %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Source Count</th>
+        <th>Last Sync</th>
+        <th>Item Count</th>
+        <th>Sync Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in workspace_rows %}
+      <tr>
+        <td><a href="/workspaces/{{ row.workspace.id }}">{{ row.workspace.name }}</a></td>
+        <td>{{ row.source_count }}</td>
+        <td>{{ format_timestamp(row.last_sync) if row.last_sync else "Never" }}</td>
+        <td>{{ row.item_count }}</td>
+        <td><span class="badge {{ row.workspace.sync_status }}">{{ row.workspace.sync_status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

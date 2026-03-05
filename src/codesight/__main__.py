@@ -6,6 +6,7 @@ Usage:
     python -m codesight ask "question" [path]    Ask a question (uses Claude)
     python -m codesight status [path]            Check index status
     python -m codesight demo                     Launch Streamlit web chat
+    python -m codesight dashboard                Launch admin dashboard
 """
 
 from __future__ import annotations
@@ -88,6 +89,11 @@ def main():
 
     # demo
     sub.add_parser("demo", help="Launch Streamlit web chat UI")
+
+    # dashboard
+    p_dashboard = sub.add_parser("dashboard", help="Launch admin dashboard")
+    p_dashboard.add_argument("--host", default="0.0.0.0", help="Dashboard bind host")
+    p_dashboard.add_argument("--port", type=int, default=8080, help="Dashboard bind port")
 
     # SPEC-009-007: Benchmark harness CLI subcommands.
     # benchmark
@@ -226,6 +232,9 @@ def main():
     if args.command == "bot":
         _run_bot(args)
         return
+    if args.command == "dashboard":
+        _run_dashboard(args)
+        return
     if args.command == "workspace":
         _run_workspace_cli(args, p_workspace)
         return
@@ -323,6 +332,29 @@ def _run_bot(args):
     from .bot.app import run_bot_server
 
     run_bot_server(data_path=args.data_path)
+
+
+def _run_dashboard(args):
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise RuntimeError(
+            "Dashboard support requires optional dependency group 'dashboard' "
+            "(install with: pip install -e '.[dashboard]')."
+        ) from exc
+
+    from .dashboard.app import MISSING_API_KEY_MESSAGE, create_app
+
+    try:
+        app = create_app()
+    except RuntimeError as exc:
+        if str(exc) == MISSING_API_KEY_MESSAGE:
+            # // EDGE-014-001: Startup without key exits with exact deterministic message.
+            print(MISSING_API_KEY_MESSAGE)
+            sys.exit(1)
+        raise
+
+    uvicorn.run(app, host=args.host, port=args.port)
 
 
 def _run_workspace_cli(args, parser):

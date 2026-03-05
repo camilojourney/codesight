@@ -1,0 +1,37 @@
+{% if source_error %}
+<div class="message error">{{ source_error }}</div>
+{% endif %}
+
+{% if not sources %}
+<p class="muted">No sources configured.</p>
+{% else %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>Value</th>
+      <th>Created</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for source in sources %}
+    <tr>
+      <td>{{ source.source_type }}</td>
+      <td><code>{{ source_config_value(source) }}</code></td>
+      <td>{{ source.created_at }}</td>
+      <td>
+        <form
+          class="inline-form"
+          hx-post="/workspaces/{{ workspace_id }}/sources/{{ source.id }}/delete"
+          hx-target="#sources-panel"
+          hx-swap="innerHTML"
+        >
+          <button type="submit" class="danger">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}

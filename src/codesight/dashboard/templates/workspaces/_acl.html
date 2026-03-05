@@ -1,0 +1,33 @@
+{% if acl_error %}
+<div class="message error">{{ acl_error }}</div>
+{% endif %}
+
+{% if not acl_entries %}
+<p class="muted">No users have access. This workspace is private.</p>
+{% else %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Email</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for email in acl_entries %}
+    <tr>
+      <td>{{ email }}</td>
+      <td>
+        <form
+          class="inline-form"
+          hx-post="/workspaces/{{ workspace_id }}/access/{{ email | urlencode }}/delete"
+          hx-target="#acl-panel"
+          hx-swap="innerHTML"
+        >
+          <button type="submit" class="danger">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}

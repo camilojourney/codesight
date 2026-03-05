@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Query Analytics</h1>
+  <form method="get" action="/analytics" class="row" style="align-items:flex-end;">
+    <div class="field" style="max-width:280px;">
+      <label for="workspace_id">Workspace</label>
+      <select id="workspace_id" name="workspace_id">
+        <option value="">All workspaces</option>
+        {% for workspace in workspaces %}
+        <option value="{{ workspace.id }}" {% if selected_workspace_id == workspace.id %}selected{% endif %}>
+          {{ workspace.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field" style="max-width:180px;">
+      <label for="days">Range (days)</label>
+      <input id="days" type="number" name="days" min="1" max="365" value="{{ days }}" />
+    </div>
+    <div>
+      <button type="submit">Apply</button>
+    </div>
+  </form>
+</div>
+
+<div class="row">
+  <div class="card" style="flex:1 1 240px;">
+    <h3>P50 Latency</h3>
+    <p style="font-size:28px;margin:0;">{{ p50_latency_ms if p50_latency_ms is not none else "-" }} ms</p>
+  </div>
+  <div class="card" style="flex:1 1 240px;">
+    <h3>P95 Latency</h3>
+    <p style="font-size:28px;margin:0;">{{ p95_latency_ms if p95_latency_ms is not none else "-" }} ms</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Confidence Distribution</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Level</th>
+        <th>Count</th>
+        <th>Percentage</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for bucket in confidence %}
+      <tr>
+        <td>{{ bucket.label }}</td>
+        <td>{{ bucket.count }}</td>
+        <td>{{ '%.1f'|format(bucket.percentage) }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Top Queries</h2>
+  {% if not top_queries %}
+  <p class="muted">No queries recorded yet.</p>
+  {% else %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Query</th>
+        <th>Frequency</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in top_queries %}
+      <tr>
+        <td>{{ row.query_text }}</td>
+        <td>{{ row.frequency }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

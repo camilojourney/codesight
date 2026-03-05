@@ -1,0 +1,35 @@
+<div class="card" style="padding:12px;">
+  <h3 style="margin-top:0;">M365 Browser ({{ source_type }})</h3>
+  {% if error %}
+  <div class="message error">{{ error }}</div>
+  {% elif not rows %}
+  <p class="muted">No items found.</p>
+  {% else %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Value</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          {% if row.url %}
+          <a href="{{ row.url }}" target="_blank" rel="noopener noreferrer">{{ row.label }}</a>
+          {% else %}
+          {{ row.label }}
+          {% endif %}
+        </td>
+        <td><code>{{ row.value }}</code></td>
+        <td>
+          <button type="button" class="secondary" onclick="useBrowseValue('{{ row.value | e }}')">Use</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>

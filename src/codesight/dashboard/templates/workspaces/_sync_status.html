@@ -1,0 +1,30 @@
+<div
+  {% if workspace.sync_status == 'syncing' %}
+  hx-get="/workspaces/{{ workspace.id }}/sync-status"
+  hx-target="#sync-status"
+  hx-swap="innerHTML"
+  hx-trigger="every 30s"
+  {% endif %}
+>
+  <p>
+    Current status:
+    <span class="badge {{ workspace.sync_status }}">{{ workspace.sync_status }}</span>
+  </p>
+
+  {% if latest_run %}
+  <p class="muted" style="margin-top:4px;">
+    Last run: {{ format_timestamp(latest_run.started_at) }}
+    {% if latest_run.completed_at %}
+      ({{ duration_seconds(latest_run.started_at, latest_run.completed_at) }})
+    {% endif %}
+  </p>
+  <p class="muted" style="margin-top:4px;">
+    Added: {{ latest_run.files_added }} | Updated: {{ latest_run.files_updated }} | Deleted: {{ latest_run.files_deleted }}
+  </p>
+  {% if latest_run.error_message %}
+  <p class="message error" style="margin-top:8px;">{{ latest_run.error_message }}</p>
+  {% endif %}
+  {% else %}
+  <p class="muted">No syncs run yet.</p>
+  {% endif %}
+</div>

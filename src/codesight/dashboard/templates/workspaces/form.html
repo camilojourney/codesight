@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Create Workspace</h1>
+  <p class="muted">Set workspace metadata and optionally seed one source and one ACL email.</p>
+</div>
+
+{% if form_error %}
+<div class="message error">{{ form_error }}</div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="/workspaces">
+    <div class="row">
+      <div class="field">
+        <label for="name">Name</label>
+        <input id="name" name="name" required value="{{ form_values.get('name', '') }}" />
+      </div>
+      <div class="field">
+        <label for="description">Description</label>
+        <input id="description" name="description" value="{{ form_values.get('description', '') }}" />
+      </div>
+    </div>
+
+    <h3>Initial Source (Optional)</h3>
+    <div class="row">
+      <div class="field">
+        <label for="source_type">Source Type</label>
+        <select id="source_type" name="source_type">
+          <option value="">Select source type</option>
+          {% for source_type in valid_source_types %}
+          <option value="{{ source_type }}" {% if form_values.get('source_type') == source_type %}selected{% endif %}>{{ source_type }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="source_value">Source Value</label>
+        <input id="source_value" name="source_value" placeholder="path/mailbox/notebook/site_url" value="{{ form_values.get('source_value', '') }}" />
+      </div>
+    </div>
+
+    <h3>Initial Access (Optional)</h3>
+    <div class="row">
+      <div class="field">
+        <label for="allowed_email">Allow Email</label>
+        <input id="allowed_email" name="allowed_email" type="email" value="{{ form_values.get('allowed_email', '') }}" />
+      </div>
+    </div>
+
+    <div style="margin-top:16px;display:flex;gap:10px;">
+      <button type="submit">Create Workspace</button>
+      <a class="button secondary" href="/">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

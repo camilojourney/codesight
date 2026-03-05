@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+    <div>
+      <h1 style="margin:0;">{{ workspace.name }}</h1>
+      <p class="muted" style="margin:6px 0 0 0;">{{ workspace.description or "No description" }}</p>
+    </div>
+    <div>
+      <span class="badge {{ workspace.sync_status }}">{{ workspace.sync_status }}</span>
+    </div>
+  </div>
+</div>
+
+{% if message %}
+<div class="message success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="message error">{{ error }}</div>
+{% endif %}
+{% if form_error %}
+<div class="message error">{{ form_error }}</div>
+{% endif %}
+
+<div class="card">
+  <h2>Workspace Settings</h2>
+  <form method="post" action="/workspaces/{{ workspace.id }}">
+    <div class="row">
+      <div class="field">
+        <label for="name">Name</label>
+        <input id="name" name="name" required value="{{ workspace.name }}" />
+      </div>
+      <div class="field">
+        <label for="description">Description</label>
+        <input id="description" name="description" value="{{ workspace.description or '' }}" />
+      </div>
+    </div>
+    <div style="margin-top:14px;">
+      <button type="submit">Save</button>
+    </div>
+  </form>
+  <form
+    style="margin-top:10px;"
+    method="post"
+    action="/workspaces/{{ workspace.id }}/delete"
+    onsubmit="return confirm('Delete this workspace?');"
+  >
+    <button type="submit" class="danger">Delete Workspace</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Sync</h2>
+  <form
+    hx-post="/workspaces/{{ workspace.id }}/sync"
+    hx-target="#sync-status"
+    hx-swap="innerHTML"
+  >
+    <button type="submit">Trigger Sync</button>
+  </form>
+  <div id="sync-status" style="margin-top:12px;">
+    {% include "workspaces/_sync_status.html" %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Sources</h2>
+  <form
+    hx-post="/workspaces/{{ workspace.id }}/sources"
+    hx-target="#sources-panel"
+    hx-swap="innerHTML"
+  >
+    <div class="row">
+      <div class="field">
+        <label for="source_type">Type</label>
+        <select id="source_type" name="source_type" required>
+          {% for source_type in valid_source_types %}
+          <option value="{{ source_type }}">{{ source_type }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="source_value">Value</label>
+        <input id="source_value" name="source_value" placeholder="path/mailbox/notebook/site_url" required />
+      </div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:10px;">
+      <button type="submit">Add Source</button>
+      <button type="button" class="secondary" onclick="browseM365('{{ workspace.id }}')">Browse M365</button>
+    </div>
+  </form>
+
+  <div id="browse-results" style="margin-top:12px;"></div>
+
+  <div id="sources-panel" style="margin-top:12px;">
+    {% include "workspaces/_sources.html" %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Access Control</h2>
+  <form
+    hx-post="/workspaces/{{ workspace.id }}/access"
+    hx-target="#acl-panel"
+    hx-swap="innerHTML"
+  >
+    <div class="row">
+      <div class="field">
+        <label for="acl_email">Email</label>
+        <input id="acl_email" type="email" name="email" required placeholder="user@example.com" />
+      </div>
+    </div>
+    <div style="margin-top:12px;">
+      <button type="submit">Add Access</button>
+    </div>
+  </form>
+
+  <div id="acl-panel" style="margin-top:12px;">
+    {% include "workspaces/_acl.html" %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Sync History</h2>
+  {% if not sync_history %}
+  <p class="muted">No syncs run yet.</p>
+  {% else %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Started</th>
+        <th>Completed</th>
+        <th>Duration</th>
+        <th>Status</th>
+        <th>Added</th>
+        <th>Updated</th>
+        <th>Deleted</th>
+        <th>Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in sync_history %}
+      <tr>
+        <td>{{ format_timestamp(run.started_at) }}</td>
+        <td>{{ format_timestamp(run.completed_at) if run.completed_at else "" }}</td>
+        <td>{{ duration_seconds(run.started_at, run.completed_at) }}</td>
+        <td><span class="badge {{ run.status }}">{{ run.status }}</span></td>
+        <td>{{ run.files_added }}</td>
+        <td>{{ run.files_updated }}</td>
+        <td>{{ run.files_deleted }}</td>
+        <td>{{ shorten_error(run.error_message) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<script>
+  function browseM365(workspaceId) {
+    const select = document.getElementById("source_type");
+    const type = select ? select.value : "drive";
+    const url = `/workspaces/${workspaceId}/sources/browse?type=${encodeURIComponent(type)}`;
+    htmx.ajax("GET", url, { target: "#browse-results", swap: "innerHTML" });
+  }
+
+  function useBrowseValue(value) {
+    const input = document.getElementById("source_value");
+    if (input) {
+      input.value = value;
+      input.focus();
+    }
+  }
+</script>
+{% endblock %}
