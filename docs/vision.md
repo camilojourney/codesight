@@ -27,16 +27,24 @@ Point codesight at a folder. It indexes everything into a hybrid search index. T
 
 ## Key Differentiator
 
-**Hybrid BM25 + vector + RRF retrieval.** Most competitors (Glean, Azure AI Search, ChatPDF) use vector-only search. We combine keyword matching (BM25) with semantic search (vectors) via Reciprocal Rank Fusion. This catches what vector-only misses: exact contract numbers, dates, section references, vendor names.
+**Adaptive multi-strategy retrieval with verification loops.** Most competitors use a single retrieval strategy. CodeSight adapts per query:
 
-For scoped document collections (hundreds to thousands of documents), this hybrid approach matches or beats cloud search services — at zero ongoing search cost, with complete data privacy.
+1. **Semantic cache** checks first — 50-65% of queries answered instantly without touching retrieval or LLM
+2. **Hybrid BM25 + vector + RRF** for all retrieval — catches what vector-only misses (exact numbers, dates, section references)
+3. **Cross-encoder reranking** for precision — +17-22pp over hybrid alone
+4. **JIT context** for volatile sources — code repos, active wikis stay fresh via webhooks
+5. **Agentic decomposition** for multi-hop questions — breaks complex queries into parallel sub-queries
+6. **Verification loops** after every answer — hallucination detection + source citations before the user sees anything
+
+For scoped document collections (hundreds to thousands of documents), this adaptive approach matches or beats cloud search services — at zero ongoing search cost, with complete data privacy.
 
 ## Delivery Channels
 
 1. **Web Chat UI** (Streamlit) — browser-based Q&A for non-technical users
 2. **CLI** — developer-friendly command-line interface
-3. **Slack Bot** (planned) — answer questions directly in team channels
-4. **Python API** — `CodeSight` class for programmatic integration
+3. **Teams Bot** (planned) — answer questions in Microsoft Teams, natural for M365 orgs
+4. **Slack Bot** (planned) — for non-Microsoft shops
+5. **Python API** — `CodeSight` class for programmatic integration
 
 ## Design Principles
 

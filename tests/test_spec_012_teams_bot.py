@@ -74,7 +74,12 @@ def _mk_activity(*, text: str | None, conversation_type: str = "personal", entit
 
 def _extract_card(turn_context: _FakeTurnContext) -> dict:
     message = turn_context.sent[-1]
-    return message.attachments[0]["content"]
+    att = message.attachments[0]
+    # Support both real botbuilder Attachment objects (attribute access)
+    # and fallback shim dicts (subscript access).
+    if isinstance(att, dict):
+        return att["content"]
+    return att.content
 
 
 @pytest.mark.asyncio
@@ -88,10 +93,9 @@ async def test_SPEC_012_001_bot_receives_message_calls_ask_and_returns_card():
 
     assert engine.ask_calls == ["What are payment terms?"]
     assert turn_context.sent[0].type == "typing"
-    assert (
-        turn_context.sent[1].attachments[0]["contentType"]
-        == "application/vnd.microsoft.card.adaptive"
-    )
+    att = turn_context.sent[1].attachments[0]
+    content_type = att["contentType"] if isinstance(att, dict) else att.content_type
+    assert content_type == "application/vnd.microsoft.card.adaptive"
 
 
 def test_SPEC_012_002_answer_card_contains_confidence_and_expandable_sources():

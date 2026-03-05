@@ -63,8 +63,13 @@ def create_bot_app(
 
     app_id = os.environ.get("CODESIGHT_BOT_APP_ID", "")
     app_secret = os.environ.get("CODESIGHT_BOT_APP_SECRET", "")
+    tenant_id = os.environ.get("CODESIGHT_M365_TENANT_ID", "")
 
-    settings = BotFrameworkAdapterSettings(app_id, app_secret)
+    settings = BotFrameworkAdapterSettings(
+        app_id,
+        app_secret,
+        channel_auth_tenant=tenant_id if tenant_id else None,
+    )
     adapter = BotFrameworkHttpAdapter(settings)
     adapter.on_turn_error = _on_turn_error
 

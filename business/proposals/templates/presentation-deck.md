@@ -147,7 +147,7 @@
 **On screen:**
 > **Let's start with a pilot.**
 >
-> 1 project. 2 weeks. $[7,500-10,000].
+> 1 project. 2 weeks. $7,500.
 > Money-back guarantee.
 >
 > [email] | [phone]

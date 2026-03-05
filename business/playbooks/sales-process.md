@@ -28,6 +28,7 @@
 
 ## Pricing Anchors
 
-- Reference `specs/005-money-model.md` for current pricing
 - Always lead with ROI: "Your team loses $X/month in search time"
-- Pilot is the entry point: $3-5K, 2 weeks, one project, money-back guarantee
+- Pilot is the entry point: **$7,500**, 2 weeks, one project, money-back guarantee
+- Scale: $3-5K per additional project
+- Maintenance: $1-2K/month

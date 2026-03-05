@@ -91,11 +91,13 @@ For critical or complex features, add more cycles. For simple changes, one cycle
 Every cycle prompt must include an iterative verification loop — not just "run tests" but "run, fix, repeat until green":
 
 ```
-Run pnpm test. If any tests fail, fix them and run again. Repeat until all tests pass.
-Run pnpm eslint . — fix any lint issues found.
-Run cd frontend && pnpm tsc --noEmit — fix any type errors.
+Run the repo's test suite. If any tests fail, fix them and run again. Repeat until all tests pass.
+Run the repo's linter — fix any issues found.
+Run type checking if applicable — fix any type errors.
 Only commit when everything passes.
 ```
+
+Use the verification commands from the **Verification by Project Type** table at the bottom of this file. Check the repo's `CLAUDE.md` for project-specific overrides.
 
 ### Cycle Handoff
 When cycles build on each other, include context for the next agent. The cycle prompt should reference what the previous cycle did:
@@ -133,7 +135,7 @@ env -u CLAUDECODE claude --dangerously-skip-permissions --model [model] --max-tu
 If background execution fails for any reason, fall back to generating commands for the user to paste:
 
 ```bash
-claude --dangerously-skip-permissions --model claude-sonnet-4-6 -p 'Read specs/NNN-feature.md. Implement it fully. Run pnpm test and pnpm eslint . when done. Commit.'
+claude --dangerously-skip-permissions --model claude-sonnet-4-6 -p 'Read specs/NNN-feature.md. Implement it fully. Run tests and lint when done. Commit.'
 ```
 
 The user pastes into a terminal, waits for completion, comes back.
@@ -185,11 +187,97 @@ To enable: add `--worktree` to the `claude` command or use `isolation: worktree`
 - Architectural decisions
 - Anything the user wants to review before execution
 
-## Package Manager
-- Always **pnpm** (not npm). Project uses `pnpm-lock.yaml`.
-- Commands: `pnpm test`, `pnpm dev`, `pnpm eslint .`
+## Package Managers
+
+Use the correct package manager for the repo's stack. Never mix them.
+
+| Stack | Manager | Test | Lint | Dev |
+|-------|---------|------|------|-----|
+| JS/TS | **pnpm** (not npm) | `pnpm test` | `pnpm eslint .` | `pnpm dev` |
+| Python (uv) | **uv** | `uv run pytest -q` | `uv run ruff check .` | `uv run python -m <module>` |
+| Python (pip) | **pip** | `pytest -q` | `ruff check .` | `python -m <module>` |
+
+Check the repo's lock file (`pnpm-lock.yaml`, `uv.lock`, `requirements.txt`) to determine which applies.
 
 ## Commit Style
 - Descriptive messages with `feat:`, `fix:`, `chore:` prefixes
 - Exclude runtime data files (e.g., `data/.pipeline-state.json`)
 - Co-Author-By trailer for Claude
+
+## Delegation — Codex + Gemini CLIs (token-saving mode)
+
+When Claude tokens are low or the user says "delegate", "use codex", "use gemini", or "out of tokens", Opus orchestrates external CLIs instead of `claude -p`.
+
+### Available Agents
+
+| Agent | Model | Best For |
+|-------|-------|----------|
+| **Codex** | `gpt-5.3-codex` (medium reasoning) | Write/fix code, refactor, multi-file changes |
+| **Gemini** | Auto (Gemini 3) — routes to `gemini-3-pro` or `gemini-3-flash` by complexity | Research, review, web search, analysis (1M+ context) |
+
+### Commands
+
+```bash
+# Codex — code changes (full autonomy)
+codex exec --full-auto -o /tmp/codex-result.md "<prompt>"
+
+# Gemini — review/research (auto-routes Pro vs Flash by complexity)
+gemini -p "<prompt>" --yolo
+
+# Gemini — force Pro for complex reasoning
+gemini -p "<prompt>" --yolo --model gemini-3-pro-preview
+```
+
+Notes:
+- Gemini CLI defaults to Auto (Gemini 3) routing — simple tasks get Flash, complex get Pro. No `--model` flag needed.
+- Use `--model gemini-3-pro-preview` only when you need to force Pro for complex reasoning.
+- Sub-agents inside Gemini may use different models than configured — ignore model self-reports in output.
+
+### Task Assignment
+
+| Task | Primary | Verify |
+|------|---------|--------|
+| Write/fix code | Codex (`--full-auto`) | Gemini reviews diff |
+| Code review | Gemini (`--yolo`) | Codex second opinion |
+| Security audit | Both parallel | Compare results |
+| Refactor | Codex (single worker first) | Gemini reviews |
+| Research / docs / web search | Gemini (Google Search, 1M+ context) | — |
+| Large codebase exploration | Gemini (1M+ context) | — |
+
+### Rules
+
+1. **Claude orchestrates, CLIs do the work.** Break tasks into prompts, delegate, read results.
+2. **Codex writes code.** Use `--full-auto` for file changes. Output to `/tmp/codex-cycle-N.md`.
+3. **Gemini reviews + researches.** Use `-p --yolo` for headless. Output to `/tmp/gemini-cycle-N.md`.
+4. **Run in parallel** with `run_in_background`. Max 2-3 concurrent Gemini workers (Pro capacity pool is shared and exhausts fast). Codex can handle more parallelism.
+5. **Gemini always reviews Codex output** — different model catches different bugs, no confirmation bias.
+6. **No file collisions** — never launch multiple Codex workers editing the same file simultaneously.
+7. **Two-phase for refactors:** Phase 1 = one worker does structural changes. Phase 2 = parallel workers on separate files.
+8. **Claude subagents only when** CLIs are unavailable or for quick Glob/Grep/Read lookups.
+
+### Priority (when delegating)
+
+External CLIs first → Claude Read/Grep for quick lookups → Claude background agents as last resort
+
+### Cycle Pattern (delegated)
+
+Same cycle structure as Claude execution, but with different tools:
+
+```
+Cycle 1 (Codex --full-auto) — Implement the feature
+Cycle 2 (Gemini --yolo)     — Review diff, flag issues
+Cycle 3 (Codex --full-auto) — Fix flagged issues
+Cycle 4 (Gemini --yolo)     — Final review + test verification
+```
+
+### Verification by Project Type
+
+Pick the right verification commands for the repo's stack:
+
+| Stack | Verification |
+|-------|-------------|
+| JS/TS (pnpm) | `pnpm test && pnpm eslint .` |
+| Python (uv) | `uv run pytest -q && uv run ruff check .` |
+| Python (pip) | `pytest -q && ruff check .` |
+
+Check the repo's `CLAUDE.md` or package files to determine which stack applies.

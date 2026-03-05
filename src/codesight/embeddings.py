@@ -87,7 +87,7 @@ class LocalEmbedder:
             from sentence_transformers import SentenceTransformer
 
             try:
-                self._model = SentenceTransformer(self._runtime_model_id, trust_remote_code=True)
+                self._model = SentenceTransformer(self._runtime_model_id, trust_remote_code=True, device="cpu")
             except Exception as exc:
                 # EDGE-002-001: Clear install/download guidance for missing local models.
                 raise ValueError(

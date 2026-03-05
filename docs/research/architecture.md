@@ -383,66 +383,101 @@ Instead of relying solely on pre-indexed embeddings, JIT context pulls fresh dat
 ### 5.2 Inference (Online) — Adaptive Routing
 
 ```
-  Query ──► Semantic Cache Check
+  Query ──► Semantic Cache Check (confidence-gated, source-linked invalidation)
                   │
             ┌─────┴──────┐
             │ Cache Hit   │ Cache Miss
-            │ (68.8%)     │
+            │ (~50-65%)   │
             ▼             ▼
-        Response    Query Router (LLM classifier)
+        Response    Query Router (hybrid cascade)
+                    ├── Rules (<1ms, ~70%)
+                    ├── Embedding classifier (5-30ms, ~20%)
+                    └── LLM fallback (500ms, ~10%)
                           │
-              ┌───────────┼───────────┬──────────────┐
-              ▼           ▼           ▼              ▼
-          Simple      Standard    Code Query    Multi-hop
-          Factoid     Search                    Complex
-              │           │           │              │
-          BM25 only   Hybrid      Hybrid +       Agentic
-          (fast)      BM25+Vec   AST index     decompose
-              │        + RRF      + code-       → parallel
-              │           │       specific       sub-queries
-              │           │       embedding          │
-              └─────┬─────┴───────┘──────────────────┘
-                    │
-              ACL Filter (metadata)
-                    │
-              Cross-Encoder Rerank (50→10)
-                    │
-              ┌─────┴──────┐
-              │ Simple      │ Complex
-              ▼             ▼
-          Haiku 4.5    Sonnet 4.6
-          ($1/$5)      (cached, $0.30/$15)
-              │             │
-              └──────┬──────┘
-                     ▼
-                 Response ──► Cache Store
+              ┌───────────┼───────────┬──────────────┬────────────┐
+              ▼           ▼           ▼              ▼            ▼
+           CAG        Simple      Code Query    Recent/JIT    Multi-hop
+          (<200K      Factoid/                                Complex
+          tokens)     Standard
+              │           │           │              │            │
+          Full docs   Hybrid      Hybrid +      Hybrid +     Agentic:
+          in context  BM25+Vec   AST index +   BM25+Vec+    decompose →
+          + prompt    + RRF      code embed    RRF + live    parallel
+          caching     + Rerank   + Rerank      source fetch  sub-queries
+              │           │           │              │            │
+              └───────────┴───────┬───┴──────────────┴────────────┘
+                                  │
+                          ACL Filter (metadata)
+                                  │
+                          Cross-Encoder Rerank (50→10)
+                                  │
+                          ┌───────┴────────┐
+                          │ Simple          │ Complex
+                          ▼                 ▼
+                      Haiku 4.5         Sonnet 4.6
+                      ($1/$5)           (cached, $0.30/$15)
+                          │                 │
+                          └────────┬────────┘
+                                   ▼
+                          Verification Loop
+                          ├── HHEM grounding check (<600MB, CPU, ~1.5s)
+                          ├── Claude Citations API (source attribution, free)
+                          └── Confidence gate (low → retry or "I don't know")
+                                   │
+                               Response ──► Cache Store (only if confidence > threshold)
 ```
+
+**Critical design principle**: Hybrid BM25+vector+RRF is the baseline for ALL query types except CAG. The router does NOT choose between "BM25 only" vs "hybrid" — hybrid is always the default. The router only varies: (1) reranking depth, (2) AST index inclusion, (3) JIT source fetch, (4) multi-step decomposition, and (5) LLM tier. Research consistently shows hybrid beats any single strategy (+22pp Recall@50). [VERIFIED, Grade B — BSWEN, multiple benchmarks]
 
 ### 5.3 Routing Logic
 
 | Query Type | Detection Signal | Retrieval Strategy | LLM | Latency Budget |
 |------------|-----------------|-------------------|-----|----------------|
-| Cached repeat | Semantic similarity >0.95 to cached query | None (cache hit) | None | <50ms |
-| Simple factoid | Short query, single entity | BM25 keyword only | Haiku 4.5 | <200ms |
-| Standard search | Default | Hybrid BM25+vector → RRF → rerank | Sonnet 4.6 (cached) | <500ms |
-| Code question | Code keywords, file references, function names | AST-chunked index + code embedding | Sonnet 4.6 | <500ms |
-| Recent code change | "latest", "recent commit", active branch refs | JIT: git HEAD + incremental index | Sonnet 4.6 | <1000ms |
-| Multi-hop complex | "compare", "how does X relate to Y", compound questions | Agentic: decompose → parallel retrieval → merge | Sonnet 4.6 | <2000ms |
+| Cached repeat | Semantic similarity >0.92 to cached query | None (cache hit) | None | <50ms |
+| CAG (hot docs) | Small corpus (<200K tokens), frequently queried | Full docs in Claude context + prompt caching | Sonnet 4.6 (cached) | <200ms |
+| Simple factoid | Short query, single entity | Hybrid BM25+vector+RRF → light rerank (top-20→10) | Haiku 4.5 | <300ms |
+| Standard search | Default | Hybrid BM25+vector+RRF → full rerank (top-50→10) | Sonnet 4.6 (cached) | <500ms |
+| Code question | Code keywords, file references, function names | Hybrid BM25+vector+RRF + AST-chunked index + code embedding → rerank | Sonnet 4.6 | <500ms |
+| Recent/JIT | "latest", "recent commit", active branch refs | Hybrid BM25+vector+RRF + JIT source fetch (git HEAD, webhook-updated docs) | Sonnet 4.6 | <1000ms |
+| Multi-hop complex | "compare", "how does X relate to Y", compound | Agentic: decompose → parallel hybrid retrieval per sub-query → merge → rerank | Sonnet 4.6 | <2000ms |
 
-Router implementation: lightweight LLM classifier (Haiku or fine-tuned small model) that categorizes the query type in <50ms. RouteLLM (benchmarks.md §3.4) achieves 70-85% cost savings through intelligent routing. [VERIFIED, Grade A]
+Router implementation: hybrid cascade — rule-based patterns (<1ms, catches ~70%), embedding classifier via Semantic Router (5-30ms, catches ~20%), LLM classifier via Haiku (~500ms, catches remaining ~10%). RouteLLM (benchmarks.md §3.4) handles the Haiku vs Sonnet LLM tier selection, achieving 70-85% cost savings. [VERIFIED, Grade A]
 
-### 5.4 Why This Architecture
+Implementation: Semantic Router (`semantic-router==0.1+`) for embedding classifier, RouteLLM for LLM tier selection, custom rules engine for pattern matching. See stack.md §0.5 for component details.
 
-1. **Adaptive routing** — the system picks the right tool for the query, not a one-size-fits-all pipeline
-2. **Semantic cache** — 68.8% of queries served without any retrieval or LLM cost
-3. **Hybrid search** gives +22pp Recall over vector-only when needed
-4. **RRF** is zero-config default; upgrade to SRRF or CC when labeled data exists
-5. **Cross-encoder** adds +17-22pp Precision for +120-400ms
-6. **LanceDB**: embedded, no server, native hybrid search + reranking, millions of vectors
-7. **AST chunking** for code: +4.3 Recall@5, no competitor does this
-8. **LLM routing**: cheap model (Haiku) for simple queries, Sonnet for complex — 70-85% cost savings
-9. **JIT context** for code: git webhooks + incremental re-index keeps code search fresh
-10. **ACL filter before LLM**: prevents over-permissioning (security.md §1)
+### 5.4 Verification Loop (Post-Generation)
+
+Every response passes through verification before reaching the user. This is the highest-leverage investment for accuracy — verification loops break the compounding error curve (95% per-step × 10 steps = 60% without verification, 97.5% with 95% recovery). [VERIFIED, Grade A — 99-percent-accuracy research]
+
+| Layer | Tool | What It Checks | Latency | Cost |
+|-------|------|---------------|---------|------|
+| 1. Grounding | HHEM (Vectara) | Is the response supported by retrieved docs? Score 0-1 | ~1.5s CPU | Free (OSS, <600MB) |
+| 2. Attribution | Claude Citations API | Does every claim cite a source? | 0ms (part of generation) | Free (cited_text ≠ output tokens) |
+| 3. Confidence gate | Custom logic | Citation count, HHEM score, hedging language | <10ms | Free |
+| 4. Cache decision | Custom logic | Only cache if confidence > threshold | <1ms | Free |
+
+If HHEM score < 0.5 or no citations for factual claims:
+1. Rewrite query and retry retrieval (max 2 retries)
+2. If still fails → return "I couldn't find a confident answer" + show raw retrieved chunks
+3. Never cache low-confidence responses
+
+For enterprise tier: add NeMo Guardrails (topic containment, PII detection). See security.md §4.
+
+### 5.5 Why This Architecture
+
+1. **Hybrid search for ALL queries** — +22pp Recall over vector-only, no exception. Router varies depth, not strategy.
+2. **Semantic cache** — 50-65% of queries served without retrieval or LLM cost (confidence-gated, source-linked invalidation)
+3. **Verification loops** — highest-leverage accuracy investment. HHEM + Citations catch hallucinations before they reach the user.
+4. **Adaptive routing** — 3-tier cascade (rules → embeddings → LLM) routes in <1ms for 70% of queries
+5. **RRF** is zero-config default; upgrade to SRRF or CC when labeled data exists
+6. **Cross-encoder** adds +17-22pp Precision for +120-400ms
+7. **LanceDB**: embedded, no server, native hybrid search + reranking, millions of vectors
+8. **AST chunking** for code: +4.3 Recall@5, no competitor does this
+9. **LLM routing**: cheap model (Haiku) for simple queries, Sonnet for complex — 70-85% cost savings
+10. **JIT context** for code and volatile docs: webhooks + incremental re-index + live fetch keeps results fresh
+11. **CAG for hot docs**: 40x faster, +1-4% quality for small frequently-queried corpora
+12. **ACL filter before LLM**: prevents over-permissioning (security.md §1)
+13. **Confidence-gated caching**: only cache high-quality answers, source-linked invalidation prevents stale cache
 
 ---
 
